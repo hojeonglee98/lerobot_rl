@@ -1,0 +1,514 @@
+--- git status ---
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/list_envs.py
+	modified:   scripts/rsl_rl/__pycache__/cli_args.cpython-311.pyc
+	modified:   source/arm_follow/arm_follow/tasks/direct/arm_follow/__init__.py
+	modified:   source/arm_follow/arm_follow/tasks/direct/arm_follow/agents/rsl_rl_ppo_cfg.py
+	modified:   source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env.py
+	modified:   source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env_cfg.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	source/arm_follow/arm_follow/robot/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/scripts/list_envs.py b/scripts/list_envs.py
+index 8e03914..cd2ba0f 100644
+--- a/scripts/list_envs.py
++++ b/scripts/list_envs.py
+@@ -44,7 +44,7 @@ def main():
+     index = 0
+     # acquire all Isaac environments names
+     for task_spec in gym.registry.values():
+-        if "Template-" in task_spec.id:
++        if "ArmFollow-" in task_spec.id:
+             # add details to table
+             table.add_row([index + 1, task_spec.id, task_spec.entry_point, task_spec.kwargs["env_cfg_entry_point"]])
+             # increment count
+diff --git a/scripts/rsl_rl/__pycache__/cli_args.cpython-311.pyc b/scripts/rsl_rl/__pycache__/cli_args.cpython-311.pyc
+index 7678147..bb743e6 100644
+Binary files a/scripts/rsl_rl/__pycache__/cli_args.cpython-311.pyc and b/scripts/rsl_rl/__pycache__/cli_args.cpython-311.pyc differ
+diff --git a/source/arm_follow/arm_follow/tasks/direct/arm_follow/__init__.py b/source/arm_follow/arm_follow/tasks/direct/arm_follow/__init__.py
+index aa8a35c..39dee1e 100644
+--- a/source/arm_follow/arm_follow/tasks/direct/arm_follow/__init__.py
++++ b/source/arm_follow/arm_follow/tasks/direct/arm_follow/__init__.py
+@@ -1,23 +1,17 @@
+-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+ import gymnasium as gym
+-
+ from . import agents
+ 
+-##
+-# Register Gym environments.
+-##
+-
+-
++# Register Gym environments
+ gym.register(
+-    id="Template-Arm-Follow-Direct-v0",
++    id="ArmFollow-Direct-v0",  # ← simpler, clearer name
+     entry_point=f"{__name__}.arm_follow_env:ArmFollowEnv",
+     disable_env_checker=True,
+     kwargs={
++        # path to your cfg class
+         "env_cfg_entry_point": f"{__name__}.arm_follow_env_cfg:ArmFollowEnvCfg",
++
++        # this tells IsaacLab which RL config to load (RSL-RL PPO by default)
+         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+     },
+-)
+\ No newline at end of file
++)
++
+diff --git a/source/arm_follow/arm_follow/tasks/direct/arm_follow/agents/rsl_rl_ppo_cfg.py b/source/arm_follow/arm_follow/tasks/direct/arm_follow/agents/rsl_rl_ppo_cfg.py
+index 4556af6..e4a9a85 100644
+--- a/source/arm_follow/arm_follow/tasks/direct/arm_follow/agents/rsl_rl_ppo_cfg.py
++++ b/source/arm_follow/arm_follow/tasks/direct/arm_follow/agents/rsl_rl_ppo_cfg.py
+@@ -1,27 +1,33 @@
+-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
++# Copyright (c) 2022-2025, The Isaac Lab Project Developers
+ # SPDX-License-Identifier: BSD-3-Clause
+ 
+ from isaaclab.utils import configclass
+-
+-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
++from isaaclab_rl.rsl_rl import (
++    RslRlOnPolicyRunnerCfg,
++    RslRlPpoActorCriticCfg,
++    RslRlPpoAlgorithmCfg,
++)
+ 
+ 
+ @configclass
+ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
+-    num_steps_per_env = 16
+-    max_iterations = 150
+-    save_interval = 50
+-    experiment_name = "cartpole_direct"
++    # rollout + training schedule
++    num_steps_per_env = 24          # steps per env before each PPO update
++    max_iterations = 2000           # total PPO updates
++    save_interval = 200
++    experiment_name = "arm_follow_direct"
++
++    # policy / value networks
+     policy = RslRlPpoActorCriticCfg(
+-        init_noise_std=1.0,
+-        actor_obs_normalization=False,
+-        critic_obs_normalization=False,
+-        actor_hidden_dims=[32, 32],
+-        critic_hidden_dims=[32, 32],
++        init_noise_std=0.2,
++        actor_obs_normalization=True,
++        critic_obs_normalization=True,
++        actor_hidden_dims=[256, 256],
++        critic_hidden_dims=[256, 256],
+         activation="elu",
+     )
++
++    # PPO algorithm hyperparameters
+     algorithm = RslRlPpoAlgorithmCfg(
+         value_loss_coef=1.0,
+         use_clipped_value_loss=True,
+@@ -29,10 +35,11 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
+         entropy_coef=0.005,
+         num_learning_epochs=5,
+         num_mini_batches=4,
+-        learning_rate=1.0e-3,
++        learning_rate=3.0e-4,
+         schedule="adaptive",
+         gamma=0.99,
+         lam=0.95,
+         desired_kl=0.01,
+         max_grad_norm=1.0,
+-    )
+\ No newline at end of file
++    )
++
+diff --git a/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env.py b/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env.py
+index 0515909..80a9a36 100644
+--- a/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env.py
++++ b/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env.py
+@@ -1,135 +1,197 @@
+-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
++# Copyright (c) 2022-2025, The Isaac Lab Project Developers
+ # SPDX-License-Identifier: BSD-3-Clause
+ 
+ from __future__ import annotations
+ 
+ import math
+-import torch
+ from collections.abc import Sequence
+ 
++import torch
++
+ import isaaclab.sim as sim_utils
+ from isaaclab.assets import Articulation
+ from isaaclab.envs import DirectRLEnv
+ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
+-from isaaclab.utils.math import sample_uniform
+ 
+ from .arm_follow_env_cfg import ArmFollowEnvCfg
+ 
+ 
+ class ArmFollowEnv(DirectRLEnv):
++    """Robot arm trajectory-following environment (joint-space)."""
++
+     cfg: ArmFollowEnvCfg
+ 
+     def __init__(self, cfg: ArmFollowEnvCfg, render_mode: str | None = None, **kwargs):
++        # This will call _setup_scene() internally
+         super().__init__(cfg, render_mode, **kwargs)
+ 
+-        self._cart_dof_idx, _ = self.robot.find_joints(self.cfg.cart_dof_name)
+-        self._pole_dof_idx, _ = self.robot.find_joints(self.cfg.pole_dof_name)
++        self.num_actions = self.cfg.action_space
++
++        # Effective dt for RL (actions applied every `decimation` sim steps)
++        self.rl_dt = self.cfg.sim.dt * self.cfg.decimation
++        # Buffer for last actions (for action penalty)
++        self.actions = torch.zeros(self.num_envs, self.num_actions, device=self.device)
+ 
+-        self.joint_pos = self.robot.data.joint_pos
+-        self.joint_vel = self.robot.data.joint_vel
++    # --------------------------------------------------------------------- #
++    # Scene setup
++    # --------------------------------------------------------------------- #
+ 
+     def _setup_scene(self):
++        """Create robot, ground, lights, and cloned environments."""
++        # Robot from cfg
+         self.robot = Articulation(self.cfg.robot_cfg)
+-        # add ground plane
++
++        # Ground plane (optional but nice)
+         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
+-        # clone and replicate
++
++        # Add articulation to scene before cloning
++        self.scene.articulations["robot"] = self.robot
++
++        # Clone environments
+         self.scene.clone_environments(copy_from_source=False)
+-        # we need to explicitly filter collisions for CPU simulation
++
++        # CPU collision filtering (same as template)
+         if self.device == "cpu":
+             self.scene.filter_collisions(global_prim_paths=[])
+-        # add articulation to scene
+-        self.scene.articulations["robot"] = self.robot
+-        # add lights
+-        light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
++
++        # Simple dome light
++        light_cfg = sim_utils.DomeLightCfg(
++            intensity=2000.0,
++            color=(0.75, 0.75, 0.75),
++        )
+         light_cfg.func("/World/Light", light_cfg)
+ 
++    # --------------------------------------------------------------------- #
++    # RL hooks
++    # --------------------------------------------------------------------- #
++
+     def _pre_physics_step(self, actions: torch.Tensor) -> None:
+-        self.actions = actions.clone()
++        """Store actions; DirectRLEnv will call _apply_action each sim step."""
++        if actions is None:
++            return
++
++        # clip to allowed range
++        actions = torch.clamp(actions, -self.cfg.max_action_norm, self.cfg.max_action_norm)
++        self.actions = actions
+ 
+     def _apply_action(self) -> None:
+-        self.robot.set_joint_effort_target(self.actions * self.cfg.action_scale, joint_ids=self._cart_dof_idx)
++        """Apply joint commands based on current actions."""
++        # Example: interpret actions as joint velocity targets
++        # You can switch to position or effort if it matches your actuators better.
++        target_vel = self.actions  # [num_envs, num_actions]
++
++        # Broadcast to all envs on the selected DOFs
++        self.robot.set_joint_velocity_target(
++            target_vel,
++            joint_ids=self.control_dof_indices,
++        )
+ 
+     def _get_observations(self) -> dict:
+-        obs = torch.cat(
+-            (
+-                self.joint_pos[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
+-                self.joint_vel[:, self._pole_dof_idx[0]].unsqueeze(dim=1),
+-                self.joint_pos[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
+-                self.joint_vel[:, self._cart_dof_idx[0]].unsqueeze(dim=1),
+-            ),
+-            dim=-1,
+-        )
+-        observations = {"policy": obs}
+-        return observations
++        """Observation: [q, dq, q_ref] for controlled joints."""
++        q = self.joint_pos[:, self.control_dof_indices]   # [N, A]
++        dq = self.joint_vel[:, self.control_dof_indices]  # [N, A]
++        q_ref = self._get_reference_trajectory()          # [N, A]
++
++        obs = torch.cat([q, dq, q_ref], dim=-1)           # [N, 3A]
++        return {"policy": obs}
+ 
+     def _get_rewards(self) -> torch.Tensor:
+-        total_reward = compute_rewards(
+-            self.cfg.rew_scale_alive,
+-            self.cfg.rew_scale_terminated,
+-            self.cfg.rew_scale_pole_pos,
+-            self.cfg.rew_scale_cart_vel,
+-            self.cfg.rew_scale_pole_vel,
+-            self.joint_pos[:, self._pole_dof_idx[0]],
+-            self.joint_vel[:, self._pole_dof_idx[0]],
+-            self.joint_pos[:, self._cart_dof_idx[0]],
+-            self.joint_vel[:, self._cart_dof_idx[0]],
+-            self.reset_terminated,
++        """Reward based on tracking error and action regularization."""
++        q = self.joint_pos[:, self.control_dof_indices]
++        q_ref = self._get_reference_trajectory()
++
++        # tracking error
++        err = q - q_ref
++        tracking_cost = torch.sum(err * err, dim=-1)
++
++        # action cost
++        act_cost = torch.sum(self.actions * self.actions, dim=-1)
++
++        rew = (
++            -self.cfg.rew_scale_tracking * tracking_cost
++            + self.cfg.rew_scale_action * act_cost
+         )
+-        return total_reward
++
++        # big negative if already marked terminated (optional, via reset_terminated)
++        if hasattr(self, "reset_terminated"):
++            rew = rew + self.cfg.rew_scale_terminal * self.reset_terminated.float()
++
++        return rew
+ 
+     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+-        self.joint_pos = self.robot.data.joint_pos
+-        self.joint_vel = self.robot.data.joint_vel
++        """
++        Returns:
++            reset_terminated: envs that hit failure (bool)
++            reset_time_out: envs that ended due to episode length (bool)
++        """
++        q = self.joint_pos[:, self.control_dof_indices]
++        q_ref = self._get_reference_trajectory()
+ 
+-        time_out = self.episode_length_buf >= self.max_episode_length - 1
+-        out_of_bounds = torch.any(torch.abs(self.joint_pos[:, self._cart_dof_idx]) > self.cfg.max_cart_pos, dim=1)
+-        out_of_bounds = out_of_bounds | torch.any(torch.abs(self.joint_pos[:, self._pole_dof_idx]) > math.pi / 2, dim=1)
+-        return out_of_bounds, time_out
++        # tracking error based termination
++        err = torch.abs(q - q_ref)
++        too_far = torch.any(err > self.cfg.max_joint_pos_err, dim=-1)
++
++        # timeout from DirectRLEnv buffers
++        time_out = self.episode_length_buf >= (self.max_episode_length - 1)
++
++        reset_terminated = too_far
++        reset_time_out = time_out
++
++        return reset_terminated, reset_time_out
+ 
+     def _reset_idx(self, env_ids: Sequence[int] | None):
++        """Reset selected environments to default joint states & origins."""
+         if env_ids is None:
+             env_ids = self.robot._ALL_INDICES
+-        super()._reset_idx(env_ids)
+ 
++        super()._reset_idx(env_ids)
++	
++        if not hasattr(self, "control_dof_indices"):
++            # Cache views into joint state tensors for speed
++            # These must be set FIRST!
++            self.joint_pos = self.robot.data.joint_pos
++            self.joint_vel = self.robot.data.joint_vel
++            
++            # Use the tensor shape to find the total number of DOFs (CORRECTED LINE)
++            num_dof = self.joint_pos.shape[-1]
++            
++            # Create the indices for the controlled DOFs
++            dof_indices = torch.arange(num_dof, device=self.device)
++            self.control_dof_indices = dof_indices[: self.num_actions]
++            
++        # default joint and root states
+         joint_pos = self.robot.data.default_joint_pos[env_ids]
+-        joint_pos[:, self._pole_dof_idx] += sample_uniform(
+-            self.cfg.initial_pole_angle_range[0] * math.pi,
+-            self.cfg.initial_pole_angle_range[1] * math.pi,
+-            joint_pos[:, self._pole_dof_idx].shape,
+-            joint_pos.device,
+-        )
+         joint_vel = self.robot.data.default_joint_vel[env_ids]
+ 
+-        default_root_state = self.robot.data.default_root_state[env_ids]
+-        default_root_state[:, :3] += self.scene.env_origins[env_ids]
++        root_state = self.robot.data.default_root_state[env_ids]
++        root_state[:, :3] = self.scene.env_origins[env_ids]
+ 
+-        self.joint_pos[env_ids] = joint_pos
+-        self.joint_vel[env_ids] = joint_vel
+-
+-        self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
+-        self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
++        # write to sim
++        self.robot.write_root_pose_to_sim(root_state[:, :7], env_ids)
++        self.robot.write_root_velocity_to_sim(root_state[:, 7:], env_ids)
+         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
+ 
++        # clear counters and actions
++        self.episode_length_buf[env_ids] = 0
++        self.actions[env_ids] = 0.0
++
++    # ------------------------------------------------------------------ #
++    # Internal helpers
++    # ------------------------------------------------------------------ #
++
++    def _get_reference_trajectory(self) -> torch.Tensor:
++        """Joint-space sinusoidal reference trajectory for each env and joint."""
++        if not self.cfg.track_in_joint_space:
++            raise NotImplementedError("Only joint-space tracking implemented.")
++
++        # time per env (episode_length_buf increments every RL step)
++        t = self.episode_length_buf.to(dtype=torch.float32, device=self.device) * self.rl_dt  # [N]
++        omega = 2.0 * math.pi / self.cfg.trajectory_period_s
++
++        phase = (omega * t).unsqueeze(-1)                     # [N, 1]
++        base = torch.sin(phase)                              # [N, 1]
++
++        # Same sine on all joints as a starting point
++        q_ref = self.cfg.trajectory_amplitude * base.repeat(1, self.num_actions)  # [N, A]
+ 
+-@torch.jit.script
+-def compute_rewards(
+-    rew_scale_alive: float,
+-    rew_scale_terminated: float,
+-    rew_scale_pole_pos: float,
+-    rew_scale_cart_vel: float,
+-    rew_scale_pole_vel: float,
+-    pole_pos: torch.Tensor,
+-    pole_vel: torch.Tensor,
+-    cart_pos: torch.Tensor,
+-    cart_vel: torch.Tensor,
+-    reset_terminated: torch.Tensor,
+-):
+-    rew_alive = rew_scale_alive * (1.0 - reset_terminated.float())
+-    rew_termination = rew_scale_terminated * reset_terminated.float()
+-    rew_pole_pos = rew_scale_pole_pos * torch.sum(torch.square(pole_pos).unsqueeze(dim=1), dim=-1)
+-    rew_cart_vel = rew_scale_cart_vel * torch.sum(torch.abs(cart_vel).unsqueeze(dim=1), dim=-1)
+-    rew_pole_vel = rew_scale_pole_vel * torch.sum(torch.abs(pole_vel).unsqueeze(dim=1), dim=-1)
+-    total_reward = rew_alive + rew_termination + rew_pole_pos + rew_cart_vel + rew_pole_vel
+-    return total_reward
+\ No newline at end of file
++        return q_ref
+diff --git a/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env_cfg.py b/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env_cfg.py
+index f78d38e..03c9883 100644
+--- a/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env_cfg.py
++++ b/source/arm_follow/arm_follow/tasks/direct/arm_follow/arm_follow_env_cfg.py
+@@ -1,48 +1,44 @@
+-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-from isaaclab_assets.robots.cartpole import CARTPOLE_CFG
+-
+-from isaaclab.assets import ArticulationCfg
++from isaaclab.utils import configclass
+ from isaaclab.envs import DirectRLEnvCfg
++from isaaclab.assets import ArticulationCfg
+ from isaaclab.scene import InteractiveSceneCfg
+ from isaaclab.sim import SimulationCfg
+-from isaaclab.utils import configclass
++
++from arm_follow.robot import SO_ARM100_ROSCON_CFG  # 👈 from your robots package
+ 
+ 
+ @configclass
+ class ArmFollowEnvCfg(DirectRLEnvCfg):
+-    # env
+-    decimation = 2
+-    episode_length_s = 5.0
+-    # - spaces definition
+-    action_space = 1
+-    observation_space = 4
+-    state_space = 0
+-
+-    # simulation
+-    sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
+-
+-    # robot(s)
+-    robot_cfg: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+-
+-    # scene
+-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
+-
+-    # custom parameters/scales
+-    # - controllable joint
+-    cart_dof_name = "slider_to_cart"
+-    pole_dof_name = "cart_to_pole"
+-    # - action scale
+-    action_scale = 100.0  # [N]
+-    # - reward scales
+-    rew_scale_alive = 1.0
+-    rew_scale_terminated = -2.0
+-    rew_scale_pole_pos = -1.0
+-    rew_scale_cart_vel = -0.01
+-    rew_scale_pole_vel = -0.005
+-    # - reset states/conditions
+-    initial_pole_angle_range = [-0.25, 0.25]  # pole angle sample range on reset [rad]
+-    max_cart_pos = 3.0  # reset if cart exceeds this position [m]
+\ No newline at end of file
++    decimation: int = 2
++    episode_length_s: float = 5.0
++
++    # match actions/obs to your joints
++    action_space: int = 6                # 5 arm + 1 jaw
++    observation_space: int = 18          # [q, dq, q_ref] * 6
++    state_space: int = 0
++
++    sim: SimulationCfg = SimulationCfg(
++        dt=1.0 / 120.0,
++        render_interval=decimation,
++    )
++
++    robot_cfg: ArticulationCfg = SO_ARM100_ROSCON_CFG.replace(
++        prim_path="/World/envs/env_.*/SO_ARM100",
++    )
++
++    scene: InteractiveSceneCfg = InteractiveSceneCfg(
++        num_envs=512,
++        env_spacing=2.0,
++        replicate_physics=True,
++    )
++
++    # trajectory + reward etc (as you already set)
++    track_in_joint_space: bool = True
++    trajectory_period_s: float = 5.0
++    trajectory_amplitude: float = 0.3
++    rew_scale_tracking: float = 5.0
++    rew_scale_action: float = -0.001
++    rew_scale_terminal: float = -5.0
++    max_joint_pos_err: float = 3.0
++    max_action_norm: float = 1.0
++
